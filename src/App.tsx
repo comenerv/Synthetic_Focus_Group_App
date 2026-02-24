@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { runSyntheticFocusGroup } from './services/geminiService';
-import { FocusGroupReport, PersonaDefinition } from './types';
+import { runSyntheticFocusGroup, runCreativeComparison } from './services/geminiService';
+import { FocusGroupReport, PersonaDefinition, CreativeComparisonReport } from './types';
 import Dashboard from './components/Dashboard';
-import { Loader2, Play, Settings2, CreditCard, Users, Trash2, Upload, Eye, X, Download, Info, UserPlus } from 'lucide-react';
+import CreativeDashboard from './components/CreativeDashboard';
+import { Loader2, Play, Settings2, CreditCard, Users, Trash2, Upload, Eye, X, Download, Info, UserPlus, Image as ImageIcon, LayoutDashboard } from 'lucide-react';
 import { exportToWord } from './utils/exportWord';
 
 const DEFAULT_PITCH = `
@@ -27,6 +28,16 @@ Please discuss among yourselves:
 4. Would you actually apply for this card today? If not, what is the exact dealbreaker?
 `;
 
+const DEFAULT_CREATIVE_CONTEXT = `
+We are testing two different marketing posters (Creative A and Creative B) for the 'Golden State Rewards Card'.
+
+Please discuss among yourselves:
+1. What is your immediate emotional reaction to Creative A vs. Creative B?
+2. Which poster communicates the value of the card more clearly to you?
+3. Does either poster make you want to apply for the card today? 
+4. If you had to choose one that resonates with your lifestyle, which is it and why? Or do neither appeal to you?
+`;
+
 const DEFAULT_PERSONAS: PersonaDefinition[] = [
   { name: "Maria", age: 42, occupation: "Agriculture Operations Manager", location: "Fresno, CA", income: "$85,000/year", personality: "Practical, budget-conscious, straightforward, family-oriented.", spending_habits: "Spends heavily on gas for her truck commuting to farms, and groceries for her family of four." },
   { name: "Carlos", age: 34, occupation: "Farm Field Supervisor", location: "Visalia, CA", income: "$55,000/year", personality: "Hardworking, skeptical of banks, relies on cash but wants to build credit.", spending_habits: "High gas spending, buys groceries at local markets, sends money to family. Worried about high interest rates." },
@@ -39,29 +50,58 @@ const DEFAULT_PERSONAS: PersonaDefinition[] = [
 ];
 
 export default function App() {
-  const [pitch, setPitch] = useState(DEFAULT_PITCH);
+  const [activeTab, setActiveTab] = useState<'campaign' | 'creative'>('campaign');
+  const [campaignPitch, setCampaignPitch] = useState(DEFAULT_PITCH);
+  const [creativeContext, setCreativeContext] = useState(DEFAULT_CREATIVE_CONTEXT);
   const [personas, setPersonas] = useState<PersonaDefinition[]>(DEFAULT_PERSONAS);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<FocusGroupReport | null>(null);
+  const [creativeReport, setCreativeReport] = useState<CreativeComparisonReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewPersona, setViewPersona] = useState<PersonaDefinition | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newPersona, setNewPersona] = useState<Partial<PersonaDefinition>>({});
   
+  const [imageA, setImageA] = useState<string | null>(null);
+  const [imageB, setImageB] = useState<string | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageARef = useRef<HTMLInputElement>(null);
+  const imageBRef = useRef<HTMLInputElement>(null);
 
   const handleRunSimulation = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await runSyntheticFocusGroup(pitch, personas);
-      setReport(result);
+      if (activeTab === 'campaign') {
+        const result = await runSyntheticFocusGroup(campaignPitch, personas);
+        setReport(result);
+      } else {
+        if (!imageA || !imageB) {
+          throw new Error("Please upload both Creative A and Creative B posters.");
+        }
+        const result = await runCreativeComparison(creativeContext, personas, imageA, imageB);
+        setCreativeReport(result);
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'A' | 'B') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (side === 'A') setImageA(base64);
+      else setImageB(base64);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDeletePersona = (indexToDelete: number) => {
@@ -150,9 +190,35 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
+        {/* Tabs */}
+        <div className="flex items-center gap-1 p-1 bg-slate-200/50 rounded-xl w-fit mb-8">
+          <button
+            onClick={() => setActiveTab('campaign')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'campaign' 
+                ? 'bg-white text-slate-900 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Campaign Testing
+          </button>
+          <button
+            onClick={() => setActiveTab('creative')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'creative' 
+                ? 'bg-white text-slate-900 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            Creative Testing (v2)
+          </button>
+        </div>
+        
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Personas Management Panel */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-[500px]">
+          <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-[550px]">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Users className="w-5 h-5 text-slate-400" />
@@ -201,7 +267,7 @@ export default function App() {
                   <div key={idx} className="group flex items-start justify-between p-3 rounded-xl border border-slate-100 bg-slate-50 hover:border-slate-200 transition-colors">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">{persona.name}, {persona.age}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">{persona.occupation} â€¢ {persona.location}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{persona.occupation} • {persona.location}</p>
                       <p className="text-xs text-slate-500 mt-1 line-clamp-1" title={persona.spending_habits}>
                         <span className="font-medium">Habits:</span> {persona.spending_habits}
                       </p>
@@ -229,15 +295,15 @@ export default function App() {
           </section>
 
           {/* Configuration Panel */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-[500px]">
+          <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-[550px]">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-slate-400" />
-                Campaign Stimulus
+                {activeTab === 'campaign' ? 'Campaign Stimulus' : 'Creative Comparison'}
               </h2>
               <button
                 onClick={handleRunSimulation}
-                disabled={loading || !pitch.trim() || personas.length === 0}
+                disabled={loading || (activeTab === 'campaign' ? !campaignPitch.trim() : !creativeContext.trim()) || personas.length === 0 || (activeTab === 'creative' && (!imageA || !imageB))}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
               >
                 {loading ? (
@@ -248,20 +314,74 @@ export default function App() {
                 ) : (
                   <>
                     <Play className="w-4 h-4" />
-                    Run Focus Group
+                    Run {activeTab === 'campaign' ? 'Focus Group' : 'Creative Test'}
                   </>
                 )}
               </button>
             </div>
             
-            <div className="relative flex-1 flex flex-col">
-              <textarea
-                value={pitch}
-                onChange={(e) => setPitch(e.target.value)}
-                disabled={loading}
-                className="flex-1 w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none disabled:opacity-50"
-                placeholder="Enter your credit card campaign pitch here..."
-              />
+            <div className="flex-1 flex flex-col gap-4">
+              <div className={activeTab === 'campaign' ? 'flex-1' : 'h-32'}>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  {activeTab === 'campaign' ? 'Campaign Context' : 'Creative Context'}
+                </label>
+                <textarea
+                  value={activeTab === 'campaign' ? campaignPitch : creativeContext}
+                  onChange={(e) => activeTab === 'campaign' ? setCampaignPitch(e.target.value) : setCreativeContext(e.target.value)}
+                  disabled={loading}
+                  className="w-full h-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none disabled:opacity-50"
+                  placeholder={activeTab === 'campaign' ? "Enter your credit card campaign pitch here..." : "Enter your creative testing questions here..."}
+                />
+              </div>
+
+              {activeTab === 'creative' && (
+                <div className="flex-1 grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Creative A</label>
+                    <div 
+                      onClick={() => imageARef.current?.click()}
+                      className="flex-1 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all overflow-hidden relative group"
+                    >
+                      {imageA ? (
+                        <>
+                          <img src={imageA} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span className="text-white text-xs font-bold">Change Image</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-8 h-8 text-slate-300" />
+                          <span className="text-xs text-slate-400 font-medium">Upload Poster A</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" ref={imageARef} onChange={(e) => handleImageUpload(e, 'A')} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Creative B</label>
+                    <div 
+                      onClick={() => imageBRef.current?.click()}
+                      className="flex-1 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all overflow-hidden relative group"
+                    >
+                      {imageB ? (
+                        <>
+                          <img src={imageB} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span className="text-white text-xs font-bold">Change Image</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-8 h-8 text-slate-300" />
+                          <span className="text-xs text-slate-400 font-medium">Upload Poster B</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" ref={imageBRef} onChange={(e) => handleImageUpload(e, 'B')} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -274,7 +394,7 @@ export default function App() {
         )}
 
         {/* Results Dashboard */}
-        {report && !loading && (
+        {activeTab === 'campaign' && report && !loading && (
           <div className="mt-12">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -295,15 +415,33 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'creative' && creativeReport && !loading && imageA && imageB && (
+          <div className="mt-12">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Creative Comparison Results</h2>
+                <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-600 text-xs font-medium border border-indigo-200">
+                  Visual AI Analysis
+                </span>
+              </div>
+            </div>
+            <CreativeDashboard report={creativeReport} imageA={imageA} imageB={imageB} />
+          </div>
+        )}
+
         {/* Empty State */}
-        {!report && !loading && !error && (
+        {((activeTab === 'campaign' && !report) || (activeTab === 'creative' && !creativeReport)) && !loading && !error && (
           <div className="text-center py-24">
             <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-200">
-              <CreditCard className="w-8 h-8 text-slate-400" />
+              {activeTab === 'campaign' ? <CreditCard className="w-8 h-8 text-slate-400" /> : <ImageIcon className="w-8 h-8 text-slate-400" />}
             </div>
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Ready to test your campaign</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              Ready to test your {activeTab === 'campaign' ? 'campaign' : 'creatives'}
+            </h3>
             <p className="text-slate-500 max-w-md mx-auto">
-              Click "Run Focus Group" to simulate a debate among your active personas and extract actionable insights.
+              {activeTab === 'campaign' 
+                ? 'Click "Run Focus Group" to simulate a debate among your active personas.'
+                : 'Upload two creative posters and click "Run Creative Test" to see which one performs better.'}
             </p>
           </div>
         )}

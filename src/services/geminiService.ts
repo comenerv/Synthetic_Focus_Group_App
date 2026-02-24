@@ -1,7 +1,111 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { FocusGroupReport, PersonaDefinition } from "../types";
+import { FocusGroupReport, PersonaDefinition, CreativeComparisonReport } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export async function runCreativeComparison(
+  campaignPitch: string,
+  personas: PersonaDefinition[],
+  imageA: string, // base64
+  imageB: string  // base64
+): Promise<CreativeComparisonReport> {
+  const personaString = personas.map((p, i) => 
+    `${i + 1}. ${p.name} (Age: ${p.age}, Job: ${p.occupation}, Loc: ${p.location}, Income: ${p.income}, Personality: ${p.personality}, Spending: ${p.spending_habits})`
+  ).join('\n');
+
+  const prompt = `
+    You are an expert market researcher and visual analyst. 
+    I am running a creative comparison test with ${personas.length} personas.
+    
+    The Context:
+    ${campaignPitch}
+
+    The Personas:
+    ${personaString}
+
+    I am providing two marketing creative posters (Creative A and Creative B). 
+    Analyze both images in the context of the campaign and the personas.
+    
+    Simulate how each persona would react to both creatives based on the questions in the context. 
+    Which one do they prefer? Does either poster actually convince them to apply for the card? Why or why not? 
+    What are the visual strengths and weaknesses of each for this specific Mid-California audience?
+
+    Return the analysis strictly in the requested JSON format.
+  `;
+
+  // Extract mime types and data from base64 strings
+  const getPart = (base64: string) => {
+    const [header, data] = base64.split(',');
+    const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
+    return {
+      inlineData: {
+        data,
+        mimeType
+      }
+    };
+  };
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      { parts: [{ text: prompt }] },
+      { parts: [getPart(imageA)] },
+      { parts: [getPart(imageB)] }
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          overallWinner: { type: Type.STRING, description: "Must be 'Creative A', 'Creative B', or 'Tie'" },
+          summary: { type: Type.STRING },
+          creativeAAnalysis: {
+            type: Type.OBJECT,
+            properties: {
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+              appealScore: { type: Type.NUMBER }
+            },
+            required: ["strengths", "weaknesses", "appealScore"]
+          },
+          creativeBAnalysis: {
+            type: Type.OBJECT,
+            properties: {
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+              appealScore: { type: Type.NUMBER }
+            },
+            required: ["strengths", "weaknesses", "appealScore"]
+          },
+          personaPreferences: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                personaName: { type: Type.STRING },
+                preferredCreative: { type: Type.STRING, description: "Must be 'Creative A', 'Creative B', or 'None'" },
+                wouldApply: { type: Type.BOOLEAN, description: "Whether they would actually apply for the card based on the creatives" },
+                reasoning: { type: Type.STRING },
+                quote: { type: Type.STRING }
+              },
+              required: ["personaName", "preferredCreative", "wouldApply", "reasoning", "quote"]
+            }
+          },
+          recommendations: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING }
+          }
+        },
+        required: ["overallWinner", "summary", "creativeAAnalysis", "creativeBAnalysis", "personaPreferences", "recommendations"]
+      }
+    }
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("No response from Gemini");
+  
+  return JSON.parse(text) as CreativeComparisonReport;
+}
 
 export async function runSyntheticFocusGroup(campaignPitch: string, personas: PersonaDefinition[]): Promise<FocusGroupReport> {
   // --- PYTHON BACKEND INTEGRATION ---

@@ -37,3 +37,28 @@ export interface FocusGroupReport {
   personas: PersonaVerdict[];
   missedOpportunities: string[];
 }
+
+export interface CreativePreference {
+  personaName: string;
+  preferredCreative: 'Creative A' | 'Creative B' | 'None';
+  wouldApply: boolean;
+  reasoning: string;
+  quote: string;
+}
+
+export interface CreativeComparisonReport {
+  overallWinner: 'Creative A' | 'Creative B' | 'Tie';
+  summary: string;
+  creativeAAnalysis: {
+    strengths: string[];
+    weaknesses: string[];
+    appealScore: number; // 1-10
+  };
+  creativeBAnalysis: {
+    strengths: string[];
+    weaknesses: string[];
+    appealScore: number; // 1-10
+  };
+  personaPreferences: CreativePreference[];
+  recommendations: string[];
+}
